@@ -18,8 +18,23 @@ This repository contains a bash script to easily install the Cursor AI IDE on Li
 
 ## Installation
 
-1. Clone this repository or download the install script:
+1. Clone this repository:
+   ```bash
+   git clone https://github.com/muhammadhaad/shell_scripts.git
+   cd shell_scripts
+   ```
+   
+   Or download the install script directly:
+   ```bash
+   wget https://raw.githubusercontent.com/muhammadhaad/shell_scripts/main/install_cursor.sh
+   ```
 
-## License
+2. Make the script executable:
+   ```bash
+   chmod +x install_cursor.sh
+   ```
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+3. Run the installation script:
+   ```bash
+   ./install_cursor.sh
+   ```
