@@ -1,49 +1,51 @@
 #!/bin/bash
 
-installCursor() {
-    if ! [ -f /opt/cursor.appimage ]; then
-        echo "Installing Cursor AI IDE..."
+echo "=== Cursor AI IDE Installer ==="
 
-        # URLs for Cursor AppImage and Icon
-        CURSOR_URL="https://downloader.cursor.sh/linux/appImage/x64"
-        ICON_URL="https://raw.githubusercontent.com/rahuljangirwork/copmany-logos/refs/heads/main/cursor.png"
+# Check if running with sudo
+if [ "$EUID" -ne 0 ]; then
+  echo "Please run this script with sudo: sudo $0"
+  exit 1
+fi
 
-        # Paths for installation
-        APPIMAGE_PATH="/opt/cursor.appimage"
-        ICON_PATH="/opt/cursor.png"
-        DESKTOP_ENTRY_PATH="/usr/share/applications/cursor.desktop"
+echo "Removing previous Cursor installation..."
+rm -rf ./squashfs-root || true
+rm -rf /opt/cursor || true
+rm -f /usr/share/applications/cursor.desktop || true
+rm -f /opt/cursor.appimage || true
+rm -f /opt/cursor.png || true
 
-        # Install curl if not installed
-        if ! command -v curl &> /dev/null; then
-            echo "curl is not installed. Installing..."
-            sudo apt-get update
-            sudo apt-get install -y curl
-        fi
+echo "Installing dependencies..."
+apt-get update
+apt-get install -y curl
 
-        # Download Cursor AppImage
-        echo "Downloading Cursor AppImage..."
-        sudo curl -L $CURSOR_URL -o $APPIMAGE_PATH
-        sudo chmod +x $APPIMAGE_PATH
+echo "Downloading latest Cursor AppImage..."
+cd /tmp
+rm -f cursor-*.AppImage
+curl -JLO https://downloader.cursor.sh/linux/appImage/x64
 
-        # Download Cursor icon
-        echo "Downloading Cursor icon..."
-        sudo curl -L $ICON_URL -o $ICON_PATH
+echo "Extracting AppImage..."
+chmod +x ./cursor-*.AppImage
+./cursor-*.AppImage --appimage-extract
 
-        # Create a .desktop entry for Cursor
-        echo "Creating .desktop entry for Cursor..."
-        sudo bash -c "cat > $DESKTOP_ENTRY_PATH" <<EOL
+echo "Installing Cursor..."
+mv ./squashfs-root /opt/cursor
+chown -R root: /opt/cursor
+chmod 4755 /opt/cursor/chrome-sandbox
+find /opt/cursor -type d -exec chmod 755 {} \;
+chmod 644 /opt/cursor/cursor.png
+
+echo "Creating desktop entry..."
+cat > /usr/share/applications/cursor.desktop <<EOL
 [Desktop Entry]
 Name=Cursor AI IDE
-Exec=$APPIMAGE_PATH
-Icon=$ICON_PATH
+Exec=/opt/cursor/AppRun
+Icon=/opt/cursor/cursor.png
 Type=Application
 Categories=Development;
 EOL
 
-        echo "Cursor AI IDE installation complete. You can find it in your application menu."
-    else
-        echo "Cursor AI IDE is already installed."
-    fi
-}
+chown root: /usr/share/applications/cursor.desktop
+chmod 644 /usr/share/applications/cursor.desktop
 
-installCursor
+echo "Installation complete! You can now launch Cursor AI IDE from your application menu."
