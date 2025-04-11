@@ -4,7 +4,7 @@
 LOG_FILE="$(pwd)/cursor_installer_$(date +%Y%m%d%H%M%S).log"
 exec > >(tee -a "$LOG_FILE") 2>&1
 
-echo "=== Cursor AI IDE Direct Installer/Updater ==="
+echo "=== Cursor AI IDE Installer (v0.48.8) ==="
 echo "Logging all operations to $LOG_FILE"
 
 # Check if running with sudo
@@ -26,75 +26,47 @@ fi
 get_current_version() {
   if [ -f "/opt/cursor/resources/app/package.json" ]; then
     grep -o '"version": "[^"]*"' /opt/cursor/resources/app/package.json | cut -d'"' -f4
+  elif [ -f "/opt/cursor/version" ]; then
+    cat /opt/cursor/version
   else
     echo "Not installed"
   fi
 }
 
-echo "Installing dependencies..."
-apt-get update
-apt-get install -y curl wget jq
-
-# Define target version - hardcoded to the latest known version
-TARGET_VERSION="0.48.0"
-echo "Target version: $TARGET_VERSION"
-
 CURRENT_VERSION=$(get_current_version)
 echo "Current version: $CURRENT_VERSION"
+echo "Target version: 0.48.8"
 
-# Try multiple download sources
-echo "Attempting to download Cursor v$TARGET_VERSION..."
+# Install needed tools
+echo "Installing dependencies..."
+apt-get update
+apt-get install -y curl wget
 
-# Define possible download URLs - the first successful one will be used
-DOWNLOAD_URLS=(
-  "https://cursor.sh/download/linux"
-  "https://download.cursor.sh/linux/Cursor-$TARGET_VERSION.AppImage"
-  "https://github.com/getcursor/cursor/releases/download/v$TARGET_VERSION/Cursor-$TARGET_VERSION.AppImage"
-  "https://downloader.cursor.sh/linux/appImage/x64"
-)
+# Direct download URL to version 0.48.8
+DOWNLOAD_URL="https://downloads.cursor.com/production/7801a556824585b7f2721900066bc87c4a09b743/linux/x64/Cursor-0.48.8-x86_64.AppImage"
 
-download_successful=false
-for url in "${DOWNLOAD_URLS[@]}"; do
-  echo "Trying download from: $url"
-  cd /tmp
-  rm -f cursor-*.AppImage
-  
-  if wget -O "cursor-latest.AppImage" "$url" || curl -L -o "cursor-latest.AppImage" "$url"; then
-    # Check if file exists and has content
-    if [ -f "cursor-latest.AppImage" ] && [ -s "cursor-latest.AppImage" ]; then
-      download_successful=true
-      echo "Download successful from $url"
-      break
-    fi
+echo "Downloading Cursor v0.48.8..."
+cd /tmp
+rm -f cursor-*.AppImage
+
+echo "Using direct download URL: $DOWNLOAD_URL"
+if ! wget --no-verbose -O "cursor-latest.AppImage" "$DOWNLOAD_URL"; then
+  echo "Download with wget failed, trying with curl..."
+  if ! curl -L -o "cursor-latest.AppImage" "$DOWNLOAD_URL"; then
+    echo "Error: Failed to download Cursor. Check your internet connection."
+    exit 1
   fi
-  
-  echo "Download failed from $url, trying next source..."
-done
+fi
 
-if [ "$download_successful" = false ]; then
-  echo "All download attempts failed. Please check your internet connection or try again later."
+# Check if download was successful
+if [ ! -f "cursor-latest.AppImage" ] || [ ! -s "cursor-latest.AppImage" ]; then
+  echo "Error: Downloaded file is empty or not found."
   exit 1
 fi
 
-# Try to determine the version from the downloaded file
-DOWNLOADED_VERSION=$(strings /tmp/cursor-latest.AppImage | grep -o "Cursor-[0-9]\+\.[0-9]\+\.[0-9]\+" | head -1 | cut -d'-' -f2 || echo "unknown")
-if [ -n "$DOWNLOADED_VERSION" ]; then
-  echo "Downloaded version appears to be: $DOWNLOADED_VERSION"
-else
-  echo "Warning: Could not determine downloaded version"
-fi
+echo "Download completed. File size: $(du -h cursor-latest.AppImage | cut -f1)"
 
 if [ "$UPDATE_MODE" = true ]; then
-  if [ "$CURRENT_VERSION" = "$DOWNLOADED_VERSION" ] && [ "$CURRENT_VERSION" != "unknown" ] && [ "$CURRENT_VERSION" != "Not installed" ]; then
-    echo "You already have this version installed."
-    echo "Force update anyway? [y/N]"
-    read -r response
-    if [[ ! "$response" =~ ^([yY][eE][sS]|[yY])$ ]]; then
-      echo "Update canceled."
-      exit 0
-    fi
-  fi
-  
   echo "Backing up user settings..."
   TIMESTAMP=$(date +%Y%m%d%H%M%S)
   mkdir -p /tmp/cursor_backup_$TIMESTAMP
@@ -114,29 +86,57 @@ rm -f /usr/share/applications/cursor.desktop || true
 echo "Extracting AppImage..."
 chmod +x /tmp/cursor-latest.AppImage
 cd /tmp
-./cursor-latest.AppImage --appimage-extract || {
-  echo "Error: Failed to extract AppImage. The download may be corrupted."
-  exit 1
-}
+./cursor-latest.AppImage --appimage-extract
 
 if [ ! -d "/tmp/squashfs-root" ]; then
-  echo "Error: Expected extraction directory not found."
+  echo "Error: Failed to extract AppImage. The download may be corrupted."
   exit 1
 fi
 
 echo "Installing Cursor..."
+# Create version file
+echo "0.48.8" > /tmp/squashfs-root/version
+
+# Move to installation directory
 mv ./squashfs-root /opt/cursor
 chown -R root: /opt/cursor
-chmod 4755 /opt/cursor/chrome-sandbox
+
+# Set permissions based on new structure
+if [ -f "/opt/cursor/chrome-sandbox" ]; then
+  chmod 4755 /opt/cursor/chrome-sandbox
+fi
+
+# Find the sandbox file if it's in a different location
+SANDBOX_FILE=$(find /opt/cursor -name chrome-sandbox -type f | head -1)
+if [ -n "$SANDBOX_FILE" ]; then
+  chmod 4755 "$SANDBOX_FILE"
+  echo "Set permissions for sandbox at $SANDBOX_FILE"
+fi
+
+# Make directories readable
 find /opt/cursor -type d -exec chmod 755 {} \;
-chmod 644 /opt/cursor/cursor.png
+
+# Locate icon file for desktop entry
+ICON_PATH="/usr/share/pixmaps/co.anysphere.cursor.png"
+if [ -f "/opt/cursor/usr/share/pixmaps/co.anysphere.cursor.png" ]; then
+  ICON_PATH="/opt/cursor/usr/share/pixmaps/co.anysphere.cursor.png"
+elif [ -f "/opt/cursor/cursor.png" ]; then
+  ICON_PATH="/opt/cursor/cursor.png"
+else
+  # Look for any PNG file that might be the icon
+  FOUND_ICON=$(find /opt/cursor -name "*.png" | grep -i cursor | head -1)
+  if [ -n "$FOUND_ICON" ]; then
+    ICON_PATH="$FOUND_ICON"
+    echo "Found icon at $ICON_PATH"
+  fi
+fi
 
 echo "Creating desktop entry..."
 cat > /usr/share/applications/cursor.desktop <<EOL
 [Desktop Entry]
 Name=Cursor AI IDE
 Exec=/opt/cursor/AppRun
-Icon=/opt/cursor/cursor.png
+Icon=${ICON_PATH}
 Type=Application
 Categories=Development;
 EOL
@@ -155,7 +155,12 @@ if [ "$UPDATE_MODE" = true ]; then
   fi
 fi
 
-NEW_VERSION=$(get_current_version)
+# Create version file if it doesn't exist
+if [ ! -f "/opt/cursor/version" ]; then
+  echo "0.48.8" > /opt/cursor/version
+fi
+
+NEW_VERSION="0.48.8"
 if [ "$UPDATE_MODE" = true ]; then
   echo "Update complete! Cursor AI IDE has been updated from version $CURRENT_VERSION to $NEW_VERSION."
 else

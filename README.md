@@ -38,3 +38,8 @@ This repository contains a bash script to easily install the Cursor AI IDE on Li
    ```bash
    ./install_cursor.sh
    ```
+
+4. For v 0.48 installation script:
+   ```bash
+   ./fixed_cursor_installer.sh
+   ```
